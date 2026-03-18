@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { runValidationPipeline } from '@/lib/validation/run-pipeline'
+
+export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -25,7 +28,7 @@ export async function POST(request: NextRequest) {
     .select('id, status, candidate_id, certifications(passing_score, validity_months)')
     .eq('id', attemptId)
     .eq('candidate_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!attempt) {
     return NextResponse.json({ error: 'Attempt not found' }, { status: 404 })
@@ -44,8 +47,8 @@ export async function POST(request: NextRequest) {
     .update({ submitted_at: new Date().toISOString() })
     .eq('id', attemptId)
 
-  // Run validation pipeline (may take time — run async, return 202)
-  runValidationPipeline(admin, attemptId, attempt.certifications).catch(console.error)
+  // Run validation pipeline — waitUntil keeps the function alive until complete
+  waitUntil(runValidationPipeline(admin, attemptId, attempt.certifications).catch(console.error))
 
   return NextResponse.json({ ok: true }, { status: 202 })
 }

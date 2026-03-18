@@ -25,7 +25,9 @@ export async function runValidationPipeline(
     .from('exam_sessions')
     .select('id, github_repo_name, log_events')
     .eq('attempt_id', attemptId)
-    .single()
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   if (!session) {
     console.error(`No session found for attempt ${attemptId}`)

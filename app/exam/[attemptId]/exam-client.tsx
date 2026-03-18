@@ -155,9 +155,13 @@ export default function ExamClient({
                 Use Claude Code to diagnose and fix the issues.
               </p>
               <p className="text-zinc-300 text-sm leading-relaxed mt-3">
-                When you&apos;re done, run <code className="bg-zinc-800 px-1 rounded">npm test</code> to verify your fix,
-                then click <strong>Submit Exam</strong>.
+                When you&apos;re done:
               </p>
+              <ol className="text-zinc-300 text-sm leading-relaxed mt-2 space-y-1 list-decimal list-inside">
+                <li>Run <code className="bg-zinc-800 px-1 rounded">npm test</code> to verify</li>
+                <li>Run <code className="bg-zinc-800 px-1 rounded">git add -A && git commit -m &quot;fix&quot; && git push</code></li>
+                <li>Click <strong>Submit Exam</strong></li>
+              </ol>
             </div>
           </div>
 
