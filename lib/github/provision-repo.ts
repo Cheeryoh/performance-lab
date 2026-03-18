@@ -3,8 +3,9 @@
  * Uses a PAT (Personal Access Token) for demo scale — migrate to GitHub App later.
  *
  * Strategy: NOT a fork (forks can be made public by owner). Instead we:
- *   1. Create a new empty private repo under the org
- *   2. Push the template contents into it via the Git Data API
+ *   1. Create a new private repo (auto_init=true so git DB is initialized)
+ *   2. Copy the template tree into a new commit on top of the auto-init commit
+ *   3. Force-update the default branch ref to the new commit
  */
 
 interface ProvisionRepoResult {
@@ -30,14 +31,14 @@ export async function provisionRepo(
     'Content-Type': 'application/json',
   }
 
-  // Step 1: Create private repo under the authenticated user's account
+  // Step 1: Create private repo with auto_init so the git DB exists
   const createRes = await fetch(`https://api.github.com/user/repos`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       name: repoName,
       private: true,
-      auto_init: false,
+      auto_init: true,
       description: `Exam session ${attemptId}`,
     }),
   })
@@ -48,62 +49,76 @@ export async function provisionRepo(
   }
 
   const repo = await createRes.json()
+  const defaultBranch: string = repo.default_branch // 'main' or 'master'
 
-  // Step 2: Get default branch SHA from template
-  const templateRef = await fetch(
+  // Step 2: Get HEAD SHA of the auto-init commit
+  const headRefRes = await fetch(
+    `https://api.github.com/repos/${repo.full_name}/git/refs/heads/${defaultBranch}`,
+    { headers },
+  )
+
+  if (!headRefRes.ok) {
+    throw new Error(`Failed to read new repo HEAD: ${await headRefRes.text()}`)
+  }
+
+  const { object: { sha: headSha } } = await headRefRes.json()
+
+  // Step 3: Get template branch SHA
+  const templateRefRes = await fetch(
     `https://api.github.com/repos/${org}/${template}/git/refs/heads/master`,
     { headers },
   )
 
-  if (!templateRef.ok) {
-    throw new Error(`Failed to read template ref: ${await templateRef.text()}`)
+  if (!templateRefRes.ok) {
+    throw new Error(`Failed to read template ref: ${await templateRefRes.text()}`)
   }
 
-  const { object: { sha: templateSha } } = await templateRef.json()
+  const { object: { sha: templateCommitSha } } = await templateRefRes.json()
 
-  // Step 3: Get tree from template
+  // Step 4: Get tree SHA from template commit
   const treeRes = await fetch(
-    `https://api.github.com/repos/${org}/${template}/git/commits/${templateSha}`,
+    `https://api.github.com/repos/${org}/${template}/git/commits/${templateCommitSha}`,
     { headers },
   )
+
+  if (!treeRes.ok) {
+    throw new Error(`Failed to read template tree: ${await treeRes.text()}`)
+  }
+
   const { tree: { sha: treeSha } } = await treeRes.json()
 
-  // Step 4: Create initial commit in new repo pointing to template tree
-  // First create a ref for default branch
-  const initCommitRes = await fetch(
-    `https://api.github.com/repos/${org}/${repoName}/git/commits`,
+  // Step 5: Create exam content commit on top of the auto-init commit
+  const commitRes = await fetch(
+    `https://api.github.com/repos/${repo.full_name}/git/commits`,
     {
       method: 'POST',
       headers,
       body: JSON.stringify({
         message: 'chore: initialize exam environment',
         tree: treeSha,
-        parents: [],
+        parents: [headSha],
       }),
     },
   )
 
-  if (!initCommitRes.ok) {
-    throw new Error(`Failed to create commit: ${await initCommitRes.text()}`)
+  if (!commitRes.ok) {
+    throw new Error(`Failed to create commit: ${await commitRes.text()}`)
   }
 
-  const { sha: newCommitSha } = await initCommitRes.json()
+  const { sha: newCommitSha } = await commitRes.json()
 
-  // Step 5: Create main branch ref
+  // Step 6: Force-update default branch to our new commit
   const refRes = await fetch(
-    `https://api.github.com/repos/${org}/${repoName}/git/refs`,
+    `https://api.github.com/repos/${repo.full_name}/git/refs/heads/${defaultBranch}`,
     {
-      method: 'POST',
+      method: 'PATCH',
       headers,
-      body: JSON.stringify({
-        ref: 'refs/heads/main',
-        sha: newCommitSha,
-      }),
+      body: JSON.stringify({ sha: newCommitSha, force: true }),
     },
   )
 
   if (!refRes.ok) {
-    throw new Error(`Failed to create ref: ${await refRes.text()}`)
+    throw new Error(`Failed to update ref: ${await refRes.text()}`)
   }
 
   return {
