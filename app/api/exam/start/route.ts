@@ -40,13 +40,25 @@ export async function POST(request: NextRequest) {
   }
 
   if (attempt.status === 'in_progress') {
-    // Already started — return existing session
+    // Already started — return existing session unless it was destroyed (failed provisioning)
     const { data: session } = await admin
       .from('exam_sessions')
-      .select('id, env_url')
+      .select('id, env_url, status')
       .eq('attempt_id', attemptId)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single()
-    return NextResponse.json({ sessionId: session?.id, codespaceUrl: session?.env_url })
+
+    if (session && session.status !== 'destroyed') {
+      return NextResponse.json({ sessionId: session.id })
+    }
+
+    // Session was destroyed — reset attempt so we can re-provision below
+    await admin
+      .from('exam_attempts')
+      .update({ status: 'scheduled', started_at: null })
+      .eq('id', attemptId)
+    attempt.status = 'scheduled'
   }
 
   if (!['scheduled'].includes(attempt.status)) {
