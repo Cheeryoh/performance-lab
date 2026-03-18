@@ -30,8 +30,8 @@ export async function provisionRepo(
     'Content-Type': 'application/json',
   }
 
-  // Step 1: Create private repo under org
-  const createRes = await fetch(`https://api.github.com/orgs/${org}/repos`, {
+  // Step 1: Create private repo under the authenticated user's account
+  const createRes = await fetch(`https://api.github.com/user/repos`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
