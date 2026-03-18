@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   )
 
   const { error } = await supabase.auth.verifyOtp({
-    type: 'email',
+    type: 'magiclink',
     token_hash,
   })
 
