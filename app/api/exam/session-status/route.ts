@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
     .from('exam_sessions')
     .select('id, env_url, status, codespace_name')
     .eq('attempt_id', attemptId)
-    .single()
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   if (!session) {
     return NextResponse.json({ codespaceUrl: null, status: 'provisioning' })

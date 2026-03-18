@@ -52,7 +52,9 @@ export default async function ExamPage({ params }: { params: Promise<{ attemptId
     .from('exam_sessions')
     .select('id, env_url, status, codespace_name')
     .eq('attempt_id', attemptId)
-    .single()
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   const session = _session as ExamSession | null
 
   const timeLimitMinutes = attempt.certifications?.time_limit_minutes ?? 10
