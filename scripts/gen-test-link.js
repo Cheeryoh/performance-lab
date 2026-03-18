@@ -38,7 +38,7 @@ async function main() {
     process.exit(1);
   }
 
-  const token_hash = data.properties.token_hash;
+  const token_hash = data.properties.hashed_token;
   const next       = `/exam/launch/${ATTEMPT_ID}`;
   const url        = `${LAB_URL}/api/auth/callback?token_hash=${token_hash}&next=${encodeURIComponent(next)}`;
 

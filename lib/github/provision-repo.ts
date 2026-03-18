@@ -1,13 +1,14 @@
 /**
  * Provisions a private GitHub repo for a candidate from the exam template.
  * Uses GitHub's "Generate from template" API — single call, copies all content.
- * Uses a PAT (Personal Access Token) for demo scale — migrate to GitHub App later.
+ * Requires the template repo to be marked as a "Template repository" in GitHub settings.
  */
 
-interface ProvisionRepoResult {
+export interface ProvisionRepoResult {
   repoName: string
   repoUrl: string
   cloneUrl: string
+  defaultBranch: string
 }
 
 export async function provisionRepo(
@@ -26,6 +27,17 @@ export async function provisionRepo(
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
   }
+
+  // Get the template's actual default branch — the generate response reports
+  // GitHub's new-repo default ('main') regardless of what branch the template uses
+  const templateRes = await fetch(
+    `https://api.github.com/repos/${org}/${template}`,
+    { headers },
+  )
+  if (!templateRes.ok) {
+    throw new Error(`Failed to read template repo: ${await templateRes.text()}`)
+  }
+  const { default_branch: templateDefaultBranch } = await templateRes.json()
 
   const res = await fetch(
     `https://api.github.com/repos/${org}/${template}/generate`,
@@ -48,9 +60,34 @@ export async function provisionRepo(
 
   const repo = await res.json()
 
+  // generate is async — poll until the template branch is committed before returning
+  await waitForBranch(repo.full_name, templateDefaultBranch, headers)
+
   return {
     repoName: repo.name,
     repoUrl: repo.html_url,
     cloneUrl: repo.clone_url,
+    defaultBranch: templateDefaultBranch,
   }
+}
+
+async function waitForBranch(
+  fullRepoName: string,
+  branch: string,
+  headers: Record<string, string>,
+  maxAttempts = 12,
+  intervalMs = 5000,
+): Promise<void> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const res = await fetch(
+      `https://api.github.com/repos/${fullRepoName}/branches`,
+      { headers },
+    )
+    if (res.ok) {
+      const branches = await res.json() as Array<{ name: string }>
+      if (branches.some((b) => b.name === branch)) return
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  throw new Error(`Branch ${branch} never appeared in ${fullRepoName} after ${maxAttempts * intervalMs / 1000}s`)
 }

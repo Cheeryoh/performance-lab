@@ -1,13 +1,10 @@
 /**
  * Creates a GitHub Codespace for the candidate's exam repo.
  * Injects required secrets: ANTHROPIC_API_KEY, EXAM_SESSION_ID, SUBMIT_ENDPOINT.
- *
- * The Codespace uses a devcontainer.json already in the template repo that:
- *   - Installs Claude Code CLI
- *   - Installs Playwright
- *   - Forwards ports 3000 (app) and 8080 (Playwright UI)
- *   - Configures Claude Code PostToolUse hook to stream events to our API
  */
+
+import nacl from 'tweetnacl'
+import { blake2b } from '@noble/hashes/blake2.js'
 
 interface ProvisionCodespaceResult {
   codespaceName: string
@@ -18,6 +15,7 @@ export async function provisionCodespace(
   org: string,
   repoName: string,
   sessionId: string,
+  defaultBranch: string,
 ): Promise<ProvisionCodespaceResult> {
   const token = process.env.GITHUB_PAT!
   const apiKey = process.env.ANTHROPIC_API_KEY!
@@ -30,15 +28,14 @@ export async function provisionCodespace(
     'Content-Type': 'application/json',
   }
 
-  // Create Codespace
+  // Create Codespace — omit machine to let GitHub pick the default for the account
   const createRes = await fetch(
     `https://api.github.com/repos/${org}/${repoName}/codespaces`,
     {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        ref: 'main',
-        machine: 'basicLinux32gb',
+        ref: defaultBranch,
         devcontainer_path: '.devcontainer/devcontainer.json',
       }),
     },
@@ -51,15 +48,14 @@ export async function provisionCodespace(
   const codespace = await createRes.json()
   const codespaceName: string = codespace.name
 
-  // Inject secrets into the Codespace
+  // Wait for Codespace to reach Available state before injecting secrets
+  // (secrets API returns 404 while Codespace is still Provisioning)
+  await waitForCodespace(codespaceName, token)
+
+  // Inject secrets — SUBMIT_ENDPOINT is just the base URL; the hook appends the path
   await setCodespaceSecret(codespaceName, 'ANTHROPIC_API_KEY', apiKey, token)
   await setCodespaceSecret(codespaceName, 'EXAM_SESSION_ID', sessionId, token)
-  await setCodespaceSecret(
-    codespaceName,
-    'SUBMIT_ENDPOINT',
-    `${baseUrl}/api/validation/events`,
-    token,
-  )
+  await setCodespaceSecret(codespaceName, 'SUBMIT_ENDPOINT', baseUrl, token)
 
   return {
     codespaceName,
@@ -67,20 +63,41 @@ export async function provisionCodespace(
   }
 }
 
-/**
- * Sets a secret on a Codespace using GitHub's secrets API.
- * Secrets require public key encryption (libsodium) in production;
- * for demo we use the simpler "set selected repositories" scope approach.
- */
+async function waitForCodespace(
+  codespaceName: string,
+  token: string,
+  maxAttempts = 24,
+  intervalMs = 10000,
+): Promise<void> {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  }
+  for (let i = 0; i < maxAttempts; i++) {
+    const res = await fetch(
+      `https://api.github.com/user/codespaces/${codespaceName}`,
+      { headers },
+    )
+    if (res.ok) {
+      const { state } = await res.json()
+      if (state === 'Available') return
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  throw new Error(
+    `Codespace ${codespaceName} never reached Available state after ${(maxAttempts * intervalMs) / 1000}s`,
+  )
+}
+
 async function setCodespaceSecret(
   codespaceName: string,
   secretName: string,
   secretValue: string,
   token: string,
 ): Promise<void> {
-  // Get the Codespace public key for encryption
   const keyRes = await fetch(
-    `https://api.github.com/user/codespaces/${codespaceName}/secrets/public-key`,
+    `https://api.github.com/user/codespaces/secrets/public-key`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -91,19 +108,15 @@ async function setCodespaceSecret(
   )
 
   if (!keyRes.ok) {
-    // Secrets API may not be available before Codespace is fully ready — skip non-critical ones
     console.warn(`Could not fetch public key for secret ${secretName}: ${await keyRes.text()}`)
     return
   }
 
   const { key, key_id } = await keyRes.json()
-
-  // Encrypt using sodium (requires libsodium-wrappers in production)
-  // For demo: set via environment variable alternative — devcontainer.json uses containerEnv
-  const encryptedValue = await encryptSecret(secretValue, key)
+  const encryptedValue = encryptSecret(secretValue, key)
 
   const setRes = await fetch(
-    `https://api.github.com/user/codespaces/${codespaceName}/secrets/${secretName}`,
+    `https://api.github.com/user/codespaces/secrets/${secretName}`,
     {
       method: 'PUT',
       headers: {
@@ -112,10 +125,7 @@ async function setCodespaceSecret(
         'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        encrypted_value: encryptedValue,
-        key_id,
-      }),
+      body: JSON.stringify({ encrypted_value: encryptedValue, key_id }),
     },
   )
 
@@ -125,35 +135,30 @@ async function setCodespaceSecret(
 }
 
 /**
- * Encrypts a secret value using the Codespace's public key (NaCl box seal).
- * Uses tweetnacl (pure JS) — compatible with Next.js API routes.
+ * Encrypts a secret using libsodium's crypto_box_seal algorithm.
+ * Output format: ephemeral_public_key (32 bytes) || ciphertext
+ * Nonce is derived as blake2b(ephemeral_pk || recipient_pk)[0:24]
  */
-async function encryptSecret(value: string, publicKeyB64: string): Promise<string> {
-  const nacl = await import('tweetnacl')
-
-  const recipientPublicKey = Buffer.from(publicKeyB64, 'base64')
-  const messageBytes = Buffer.from(value)
+function encryptSecret(value: string, publicKeyB64: string): string {
+  const recipientPublicKey = new Uint8Array(Buffer.from(publicKeyB64, 'base64'))
+  const message = new Uint8Array(Buffer.from(value))
 
   // Generate ephemeral keypair
-  const ephemeralKeyPair = nacl.box.keyPair()
+  const ephemeral = nacl.box.keyPair()
 
-  // Shared key via DH
-  const sharedKey = nacl.box.before(
-    new Uint8Array(recipientPublicKey),
-    ephemeralKeyPair.secretKey,
-  )
+  // Derive nonce: blake2b(ephemeral_pk || recipient_pk)[0:24]
+  const noncePreimage = new Uint8Array(64)
+  noncePreimage.set(ephemeral.publicKey, 0)
+  noncePreimage.set(recipientPublicKey, 32)
+  const nonce = blake2b(noncePreimage, { dkLen: 32 }).slice(0, 24)
 
-  // Encrypt with shared key
-  const nonce = nacl.randomBytes(nacl.box.nonceLength)
-  const encrypted = nacl.box.after(new Uint8Array(messageBytes), nonce, sharedKey)
+  // Encrypt
+  const ciphertext = nacl.box(message, nonce, recipientPublicKey, ephemeral.secretKey)
 
-  // Output: ephemeral public key (32) + nonce (24) + ciphertext
-  const output = new Uint8Array(
-    ephemeralKeyPair.publicKey.length + nonce.length + encrypted.length,
-  )
-  output.set(ephemeralKeyPair.publicKey, 0)
-  output.set(nonce, ephemeralKeyPair.publicKey.length)
-  output.set(encrypted, ephemeralKeyPair.publicKey.length + nonce.length)
+  // sealed = ephemeral_pk (32) || ciphertext
+  const sealed = new Uint8Array(32 + ciphertext.length)
+  sealed.set(ephemeral.publicKey, 0)
+  sealed.set(ciphertext, 32)
 
-  return Buffer.from(output).toString('base64')
+  return Buffer.from(sealed).toString('base64')
 }

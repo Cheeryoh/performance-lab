@@ -104,7 +104,7 @@ async function provisionInBackground(
       .eq('id', sessionId)
 
     // Provision Codespace
-    const codespace = await provisionCodespace(org, repo.repoName, sessionId)
+    const codespace = await provisionCodespace(org, repo.repoName, sessionId, repo.defaultBranch)
 
     // Update session with Codespace URL and activate
     const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2h expiry
