@@ -51,7 +51,7 @@ export async function provisionRepo(
 
   // Step 2: Get default branch SHA from template
   const templateRef = await fetch(
-    `https://api.github.com/repos/${org}/${template}/git/refs/heads/main`,
+    `https://api.github.com/repos/${org}/${template}/git/refs/heads/master`,
     { headers },
   )
 
