@@ -1,11 +1,7 @@
 /**
- * Provisions a private GitHub repo for a candidate by copying the template repo.
+ * Provisions a private GitHub repo for a candidate from the exam template.
+ * Uses GitHub's "Generate from template" API — single call, copies all content.
  * Uses a PAT (Personal Access Token) for demo scale — migrate to GitHub App later.
- *
- * Strategy: NOT a fork (forks can be made public by owner). Instead we:
- *   1. Create a new private repo (auto_init=true so git DB is initialized)
- *   2. Copy the template tree into a new commit on top of the auto-init commit
- *   3. Force-update the default branch ref to the new commit
  */
 
 interface ProvisionRepoResult {
@@ -31,98 +27,29 @@ export async function provisionRepo(
     'Content-Type': 'application/json',
   }
 
-  // Step 1: Create private repo with auto_init so the git DB exists
-  const createRes = await fetch(`https://api.github.com/user/repos`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      name: repoName,
-      private: true,
-      auto_init: true,
-      description: `Exam session ${attemptId}`,
-    }),
-  })
-
-  if (!createRes.ok) {
-    const err = await createRes.text()
-    throw new Error(`Failed to create repo: ${err}`)
-  }
-
-  const repo = await createRes.json()
-  const defaultBranch: string = repo.default_branch // 'main' or 'master'
-
-  // Step 2: Get HEAD SHA of the auto-init commit
-  const headRefRes = await fetch(
-    `https://api.github.com/repos/${repo.full_name}/git/refs/heads/${defaultBranch}`,
-    { headers },
-  )
-
-  if (!headRefRes.ok) {
-    throw new Error(`Failed to read new repo HEAD: ${await headRefRes.text()}`)
-  }
-
-  const { object: { sha: headSha } } = await headRefRes.json()
-
-  // Step 3: Get template branch SHA
-  const templateRefRes = await fetch(
-    `https://api.github.com/repos/${org}/${template}/git/refs/heads/master`,
-    { headers },
-  )
-
-  if (!templateRefRes.ok) {
-    throw new Error(`Failed to read template ref: ${await templateRefRes.text()}`)
-  }
-
-  const { object: { sha: templateCommitSha } } = await templateRefRes.json()
-
-  // Step 4: Get tree SHA from template commit
-  const treeRes = await fetch(
-    `https://api.github.com/repos/${org}/${template}/git/commits/${templateCommitSha}`,
-    { headers },
-  )
-
-  if (!treeRes.ok) {
-    throw new Error(`Failed to read template tree: ${await treeRes.text()}`)
-  }
-
-  const { tree: { sha: treeSha } } = await treeRes.json()
-
-  // Step 5: Create exam content commit on top of the auto-init commit
-  const commitRes = await fetch(
-    `https://api.github.com/repos/${repo.full_name}/git/commits`,
+  const res = await fetch(
+    `https://api.github.com/repos/${org}/${template}/generate`,
     {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        message: 'chore: initialize exam environment',
-        tree: treeSha,
-        parents: [headSha],
+        owner: org,
+        name: repoName,
+        private: true,
+        description: `Exam session ${attemptId}`,
       }),
     },
   )
 
-  if (!commitRes.ok) {
-    throw new Error(`Failed to create commit: ${await commitRes.text()}`)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Failed to generate repo from template: ${err}`)
   }
 
-  const { sha: newCommitSha } = await commitRes.json()
-
-  // Step 6: Force-update default branch to our new commit
-  const refRes = await fetch(
-    `https://api.github.com/repos/${repo.full_name}/git/refs/heads/${defaultBranch}`,
-    {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ sha: newCommitSha, force: true }),
-    },
-  )
-
-  if (!refRes.ok) {
-    throw new Error(`Failed to update ref: ${await refRes.text()}`)
-  }
+  const repo = await res.json()
 
   return {
-    repoName,
+    repoName: repo.name,
     repoUrl: repo.html_url,
     cloneUrl: repo.clone_url,
   }
