@@ -1,5 +1,4 @@
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
@@ -9,10 +8,11 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/'
 
   if (!token_hash) {
-    return NextResponse.redirect(`${origin}/unauthorized`)
+    return NextResponse.redirect(`${origin}/unauthorized?reason=missing+token`)
   }
 
-  const cookieStore = await cookies()
+  // Build the success redirect first — cookies will be set on this response
+  const redirectTo = NextResponse.redirect(`${origin}${next}`)
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,11 +20,12 @@ export async function GET(request: NextRequest) {
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll()
+          return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
+          // Set cookies on the redirect response so they are sent to the browser
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
+            redirectTo.cookies.set(name, value, options),
           )
         },
       },
@@ -43,5 +44,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  return NextResponse.redirect(`${origin}${next}`)
+  return redirectTo
 }
