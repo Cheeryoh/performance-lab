@@ -146,7 +146,7 @@ function encryptSecret(value: string, publicKeyB64: string): string {
   const noncePreimage = new Uint8Array(64)
   noncePreimage.set(ephemeral.publicKey, 0)
   noncePreimage.set(recipientPublicKey, 32)
-  const nonce = blake2b(noncePreimage, { dkLen: 32 }).slice(0, 24)
+  const nonce = blake2b(noncePreimage, { dkLen: 24 })
 
   const ciphertext = nacl.box(message, nonce, recipientPublicKey, ephemeral.secretKey)
 

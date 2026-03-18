@@ -169,40 +169,42 @@ export default function ExamClient({
             </ul>
           </div>
 
-          {codespaceUrl_ && (
-            <a
-              href={codespaceUrl_}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 w-full rounded-lg border border-zinc-700 px-4 py-3 text-sm text-zinc-300 hover:border-violet-500 hover:text-white transition-colors"
-            >
-              <ExternalLink className="h-4 w-4 shrink-0" />
-              Open Codespace in new tab
-            </a>
-          )}
         </aside>
 
-        {/* Right panel: Codespace iframe */}
-        <main className="flex-1 bg-zinc-950">
-          {!codespaceUrl_ ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center space-y-3">
-                <div className="h-6 w-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-zinc-400 text-sm">
-                  {sessionStatus === 'provisioning' && !codespaceUrl_
-                    ? 'Creating your exam repo and Codespace…'
-                    : 'Starting Codespace, injecting secrets…'}
-                </p>
-                <p className="text-zinc-600 text-xs">This usually takes 1–2 minutes.</p>
-              </div>
+        {/* Right panel: Codespace launch */}
+        <main className="flex-1 bg-zinc-950 flex items-center justify-center">
+          {sessionStatus !== 'active' ? (
+            <div className="text-center space-y-3">
+              <div className="h-6 w-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-zinc-400 text-sm">
+                {!codespaceUrl_
+                  ? 'Creating your exam repo and Codespace…'
+                  : 'Codespace starting, injecting secrets…'}
+              </p>
+              <p className="text-zinc-600 text-xs">This usually takes 1–2 minutes.</p>
             </div>
           ) : (
-            <iframe
-              src={codespaceUrl_}
-              className="w-full h-full border-0"
-              allow="clipboard-read; clipboard-write"
-              title="Exam Codespace"
-            />
+            <div className="text-center space-y-6 max-w-sm px-6">
+              <div className="space-y-2">
+                <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center mx-auto">
+                  <CheckCircle className="h-5 w-5 text-green-400" />
+                </div>
+                <h2 className="text-lg font-semibold text-white">Codespace ready</h2>
+                <p className="text-zinc-400 text-sm">
+                  Your environment is provisioned. Open it in a new tab to begin.
+                </p>
+              </div>
+              <a
+                href={codespaceUrl_!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full rounded-lg bg-violet-600 px-4 py-3 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
+              >
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                Open Codespace
+              </a>
+              <p className="text-zinc-600 text-xs">Opens in VS Code for the Web (new tab)</p>
+            </div>
           )}
         </main>
       </div>
