@@ -86,15 +86,18 @@ export async function POST(request: NextRequest) {
     .eq('id', attemptId)
 
   const org = process.env.GITHUB_ORG!
+  console.log(`[start] sessionId=${session.id} candidateId=${user.id} org=${org}`)
 
   try {
-    // Provision repo (~15s: template fetch + generate + branch poll)
+    console.log('[start] step 1: provisionRepo')
     const repo = await provisionRepo(user.id, attemptId)
+    console.log(`[start] step 1 done: repoName=${repo.repoName} branch=${repo.defaultBranch}`)
 
-    // Create Codespace — returns immediately while GitHub provisions it in the background
+    console.log('[start] step 2: createCodespace')
     const codespace = await createCodespace(org, repo.repoName, repo.defaultBranch)
+    console.log(`[start] step 2 done: codespaceName=${codespace.codespaceName}`)
 
-    // Persist everything — session-status polling route will inject secrets once Available
+    console.log('[start] step 3: update session')
     await admin
       .from('exam_sessions')
       .update({
@@ -115,9 +118,10 @@ export async function POST(request: NextRequest) {
       api_key_secret_set: false,
     })
 
+    console.log('[start] done — returning sessionId')
     return NextResponse.json({ sessionId: session.id })
   } catch (err) {
-    console.error('Provisioning failed:', err)
+    console.error('[start] Provisioning failed:', err)
     await admin
       .from('exam_sessions')
       .update({ status: 'destroyed' })

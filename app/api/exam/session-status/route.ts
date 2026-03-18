@@ -44,8 +44,10 @@ export async function GET(request: NextRequest) {
   // If still provisioning and we have a Codespace name, try to inject secrets.
   // injectCodespaceSecrets returns false if not yet Available — we just retry next poll.
   if (session.status === 'provisioning' && session.codespace_name) {
+    console.log(`[session-status] checking codespace state: ${session.codespace_name}`)
     try {
       const injected = await injectCodespaceSecrets(session.codespace_name, session.id)
+      console.log(`[session-status] inject result: ${injected}`)
       if (injected) {
         await admin
           .from('exam_sessions')
@@ -60,9 +62,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ codespaceUrl: session.env_url, status: 'active' })
       }
     } catch (err) {
-      // Log but don't fail — client will retry on next poll
-      console.error('Secret injection attempt failed:', err)
+      console.error('[session-status] inject failed:', err)
     }
+  } else {
+    console.log(`[session-status] status=${session.status} codespace_name=${session.codespace_name ?? 'null'}`)
   }
 
   return NextResponse.json({
