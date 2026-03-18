@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
-
-export const maxDuration = 300 // seconds — requires Vercel Pro
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { provisionRepo } from '@/lib/github/provision-repo'
-import { provisionCodespace } from '@/lib/github/provision-codespace'
+import { createCodespace } from '@/lib/github/provision-codespace'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -43,13 +40,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (attempt.status === 'in_progress') {
-    // Already started — return existing session URL
+    // Already started — return existing session
     const { data: session } = await admin
       .from('exam_sessions')
-      .select('env_url')
+      .select('id, env_url')
       .eq('attempt_id', attemptId)
       .single()
-    return NextResponse.json({ codespaceUrl: session?.env_url })
+    return NextResponse.json({ sessionId: session?.id, codespaceUrl: session?.env_url })
   }
 
   if (!['scheduled'].includes(attempt.status)) {
@@ -76,65 +73,43 @@ export async function POST(request: NextRequest) {
     .update({ status: 'in_progress', started_at: new Date().toISOString() })
     .eq('id', attemptId)
 
-  // Provision repo and Codespace asynchronously
-  // waitUntil keeps the Vercel function alive until provisioning completes
-  waitUntil(provisionInBackground(admin, session.id, attemptId, user.id).catch(console.error))
-
-  return NextResponse.json({ sessionId: session.id })
-}
-
-async function provisionInBackground(
-  admin: ReturnType<typeof createAdminClient>,
-  sessionId: string,
-  attemptId: string,
-  candidateId: string,
-) {
   const org = process.env.GITHUB_ORG!
 
   try {
-    // Provision private repo
-    const repo = await provisionRepo(candidateId, attemptId)
+    // Provision repo (~15s: template fetch + generate + branch poll)
+    const repo = await provisionRepo(user.id, attemptId)
 
-    // Update session with repo info
+    // Create Codespace — returns immediately while GitHub provisions it in the background
+    const codespace = await createCodespace(org, repo.repoName, repo.defaultBranch)
+
+    // Persist everything — session-status polling route will inject secrets once Available
     await admin
       .from('exam_sessions')
       .update({
         github_repo_url: repo.repoUrl,
         github_repo_name: repo.repoName,
-        provisioned_at: new Date().toISOString(),
-      })
-      .eq('id', sessionId)
-
-    // Provision Codespace
-    const codespace = await provisionCodespace(org, repo.repoName, sessionId, repo.defaultBranch)
-
-    // Update session with Codespace URL and activate
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2h expiry
-
-    await admin
-      .from('exam_sessions')
-      .update({
         codespace_name: codespace.codespaceName,
         env_url: codespace.codespaceUrl,
-        status: 'active',
-        expires_at: expiresAt,
+        provisioned_at: new Date().toISOString(),
       })
-      .eq('id', sessionId)
+      .eq('id', session.id)
 
-    // Write provisioned_envs record
     await admin.from('provisioned_envs').insert({
-      session_id: sessionId,
+      session_id: session.id,
       github_repo_name: repo.repoName,
       github_repo_url: repo.repoUrl,
       codespace_name: codespace.codespaceName,
       codespace_url: codespace.codespaceUrl,
-      api_key_secret_set: true,
+      api_key_secret_set: false,
     })
+
+    return NextResponse.json({ sessionId: session.id })
   } catch (err) {
     console.error('Provisioning failed:', err)
     await admin
       .from('exam_sessions')
       .update({ status: 'destroyed' })
-      .eq('id', sessionId)
+      .eq('id', session.id)
+    return NextResponse.json({ error: 'Provisioning failed' }, { status: 500 })
   }
 }

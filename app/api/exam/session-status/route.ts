@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { injectCodespaceSecrets } from '@/lib/github/provision-codespace'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -32,12 +33,40 @@ export async function GET(request: NextRequest) {
 
   const { data: session } = await admin
     .from('exam_sessions')
-    .select('env_url, status')
+    .select('id, env_url, status, codespace_name')
     .eq('attempt_id', attemptId)
     .single()
 
+  if (!session) {
+    return NextResponse.json({ codespaceUrl: null, status: 'provisioning' })
+  }
+
+  // If still provisioning and we have a Codespace name, try to inject secrets.
+  // injectCodespaceSecrets returns false if not yet Available — we just retry next poll.
+  if (session.status === 'provisioning' && session.codespace_name) {
+    try {
+      const injected = await injectCodespaceSecrets(session.codespace_name, session.id)
+      if (injected) {
+        await admin
+          .from('exam_sessions')
+          .update({ status: 'active' })
+          .eq('id', session.id)
+
+        await admin
+          .from('provisioned_envs')
+          .update({ api_key_secret_set: true })
+          .eq('session_id', session.id)
+
+        return NextResponse.json({ codespaceUrl: session.env_url, status: 'active' })
+      }
+    } catch (err) {
+      // Log but don't fail — client will retry on next poll
+      console.error('Secret injection attempt failed:', err)
+    }
+  }
+
   return NextResponse.json({
-    codespaceUrl: session?.env_url ?? null,
-    status: session?.status ?? 'provisioning',
+    codespaceUrl: session.env_url ?? null,
+    status: session.status ?? 'provisioning',
   })
 }

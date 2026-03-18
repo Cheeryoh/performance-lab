@@ -1,39 +1,38 @@
 /**
  * Creates a GitHub Codespace for the candidate's exam repo.
- * Injects required secrets: ANTHROPIC_API_KEY, EXAM_SESSION_ID, SUBMIT_ENDPOINT.
+ *
+ * Split into two functions so the slow Codespace startup doesn't block a
+ * Vercel serverless function:
+ *   1. createCodespace  — fast POST only, returns immediately while Codespace provisions
+ *   2. injectCodespaceSecrets — called from the session-status polling route once
+ *      the Codespace reaches Available state (~60-90s after creation)
  */
 
 import nacl from 'tweetnacl'
 import { blake2b } from '@noble/hashes/blake2.js'
 
-interface ProvisionCodespaceResult {
+export interface CreateCodespaceResult {
   codespaceName: string
   codespaceUrl: string
 }
 
-export async function provisionCodespace(
+export async function createCodespace(
   org: string,
   repoName: string,
-  sessionId: string,
   defaultBranch: string,
-): Promise<ProvisionCodespaceResult> {
+): Promise<CreateCodespaceResult> {
   const token = process.env.GITHUB_PAT!
-  const apiKey = process.env.ANTHROPIC_API_KEY!
-  const baseUrl = process.env.EXAM_ENVIRONMENT_BASE_URL!
 
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'Content-Type': 'application/json',
-  }
-
-  // Create Codespace — omit machine to let GitHub pick the default for the account
-  const createRes = await fetch(
+  const res = await fetch(
     `https://api.github.com/repos/${org}/${repoName}/codespaces`,
     {
       method: 'POST',
-      headers,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         ref: defaultBranch,
         devcontainer_path: '.devcontainer/devcontainer.json',
@@ -41,57 +40,57 @@ export async function provisionCodespace(
     },
   )
 
-  if (!createRes.ok) {
-    throw new Error(`Failed to create Codespace: ${await createRes.text()}`)
+  if (!res.ok) {
+    throw new Error(`Failed to create Codespace: ${await res.text()}`)
   }
 
-  const codespace = await createRes.json()
-  const codespaceName: string = codespace.name
-
-  // Wait for Codespace to reach Available state before injecting secrets
-  // (secrets API returns 404 while Codespace is still Provisioning)
-  await waitForCodespace(codespaceName, token)
-
-  // Inject secrets — SUBMIT_ENDPOINT is just the base URL; the hook appends the path
-  await setCodespaceSecret(codespaceName, 'ANTHROPIC_API_KEY', apiKey, token)
-  await setCodespaceSecret(codespaceName, 'EXAM_SESSION_ID', sessionId, token)
-  await setCodespaceSecret(codespaceName, 'SUBMIT_ENDPOINT', baseUrl, token)
-
+  const codespace = await res.json()
   return {
-    codespaceName,
+    codespaceName: codespace.name,
     codespaceUrl: codespace.web_url,
   }
 }
 
-async function waitForCodespace(
+/**
+ * Checks whether the Codespace is Available, and if so injects the three
+ * required secrets. Returns true if secrets were injected, false if the
+ * Codespace is not yet Available (caller should retry on next poll).
+ */
+export async function injectCodespaceSecrets(
   codespaceName: string,
-  token: string,
-  maxAttempts = 24,
-  intervalMs = 10000,
-): Promise<void> {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-  }
-  for (let i = 0; i < maxAttempts; i++) {
-    const res = await fetch(
-      `https://api.github.com/user/codespaces/${codespaceName}`,
-      { headers },
-    )
-    if (res.ok) {
-      const { state } = await res.json()
-      if (state === 'Available') return
-    }
-    await new Promise((r) => setTimeout(r, intervalMs))
-  }
-  throw new Error(
-    `Codespace ${codespaceName} never reached Available state after ${(maxAttempts * intervalMs) / 1000}s`,
+  sessionId: string,
+): Promise<boolean> {
+  const token = process.env.GITHUB_PAT!
+  const apiKey = process.env.ANTHROPIC_API_KEY!
+  const baseUrl = process.env.EXAM_ENVIRONMENT_BASE_URL!
+
+  // Check current Codespace state
+  const stateRes = await fetch(
+    `https://api.github.com/user/codespaces/${codespaceName}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    },
   )
+
+  if (!stateRes.ok) return false
+
+  const { state } = await stateRes.json()
+  if (state !== 'Available') return false
+
+  // Codespace is ready — inject secrets
+  // SUBMIT_ENDPOINT is just the base URL; the hook in .claude/settings.json appends the path
+  await setCodespaceSecret('ANTHROPIC_API_KEY', apiKey, token)
+  await setCodespaceSecret('EXAM_SESSION_ID', sessionId, token)
+  await setCodespaceSecret('SUBMIT_ENDPOINT', baseUrl, token)
+
+  return true
 }
 
 async function setCodespaceSecret(
-  codespaceName: string,
   secretName: string,
   secretValue: string,
   token: string,
@@ -108,8 +107,7 @@ async function setCodespaceSecret(
   )
 
   if (!keyRes.ok) {
-    console.warn(`Could not fetch public key for secret ${secretName}: ${await keyRes.text()}`)
-    return
+    throw new Error(`Could not fetch public key for secret ${secretName}: ${await keyRes.text()}`)
   }
 
   const { key, key_id } = await keyRes.json()
@@ -143,19 +141,15 @@ function encryptSecret(value: string, publicKeyB64: string): string {
   const recipientPublicKey = new Uint8Array(Buffer.from(publicKeyB64, 'base64'))
   const message = new Uint8Array(Buffer.from(value))
 
-  // Generate ephemeral keypair
   const ephemeral = nacl.box.keyPair()
 
-  // Derive nonce: blake2b(ephemeral_pk || recipient_pk)[0:24]
   const noncePreimage = new Uint8Array(64)
   noncePreimage.set(ephemeral.publicKey, 0)
   noncePreimage.set(recipientPublicKey, 32)
   const nonce = blake2b(noncePreimage, { dkLen: 32 }).slice(0, 24)
 
-  // Encrypt
   const ciphertext = nacl.box(message, nonce, recipientPublicKey, ephemeral.secretKey)
 
-  // sealed = ephemeral_pk (32) || ciphertext
   const sealed = new Uint8Array(32 + ciphertext.length)
   sealed.set(ephemeral.publicKey, 0)
   sealed.set(ciphertext, 32)

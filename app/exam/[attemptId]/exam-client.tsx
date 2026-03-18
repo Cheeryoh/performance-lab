@@ -38,17 +38,17 @@ export default function ExamClient({
     attemptId,
   })
 
-  // Poll for Codespace URL while provisioning
+  // Poll until status becomes 'active' (secrets injected and Codespace ready)
   useEffect(() => {
-    if (sessionStatus !== 'provisioning' || codespaceUrl_) return
+    if (sessionStatus === 'active') return
 
     const poll = setInterval(async () => {
       try {
         const res = await fetch(`/api/exam/session-status?attemptId=${attemptId}`)
         if (res.ok) {
           const data = await res.json()
-          if (data.codespaceUrl) {
-            setCodespaceUrl(data.codespaceUrl)
+          if (data.codespaceUrl) setCodespaceUrl(data.codespaceUrl)
+          if (data.status === 'active') {
             setSessionStatus('active')
             clearInterval(poll)
           }
@@ -59,7 +59,7 @@ export default function ExamClient({
     }, 3000)
 
     return () => clearInterval(poll)
-  }, [attemptId, sessionStatus, codespaceUrl_])
+  }, [attemptId, sessionStatus])
 
   async function handleSubmit() {
     if (submitting || submitted) return
@@ -188,8 +188,12 @@ export default function ExamClient({
             <div className="h-full flex items-center justify-center">
               <div className="text-center space-y-3">
                 <div className="h-6 w-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-zinc-400 text-sm">Provisioning your Codespace…</p>
-                <p className="text-zinc-600 text-xs">This usually takes 20–30 seconds.</p>
+                <p className="text-zinc-400 text-sm">
+                  {sessionStatus === 'provisioning' && !codespaceUrl_
+                    ? 'Creating your exam repo and Codespace…'
+                    : 'Starting Codespace, injecting secrets…'}
+                </p>
+                <p className="text-zinc-600 text-xs">This usually takes 1–2 minutes.</p>
               </div>
             </div>
           ) : (
