@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
+
+export const maxDuration = 300 // seconds — requires Vercel Pro
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { provisionRepo } from '@/lib/github/provision-repo'
 import { provisionCodespace } from '@/lib/github/provision-codespace'
