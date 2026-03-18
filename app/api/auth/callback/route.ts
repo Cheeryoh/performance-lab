@@ -37,8 +37,10 @@ export async function GET(request: NextRequest) {
   })
 
   if (error) {
-    console.error('[auth/callback] verifyOtp failed:', error.message)
-    return NextResponse.redirect(`${origin}/unauthorized`)
+    console.error('[auth/callback] verifyOtp failed:', error.message, error.status)
+    const url = new URL(`${origin}/unauthorized`)
+    url.searchParams.set('reason', error.message)
+    return NextResponse.redirect(url)
   }
 
   return NextResponse.redirect(`${origin}${next}`)
