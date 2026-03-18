@@ -92,6 +92,36 @@ When the human asks to start a new project:
 
 ---
 
+## External API Integrations
+
+Before writing production code against any external API:
+
+1. **Build a local test script first.** Exercise each API call in isolation, in the order they'll run in production. Catch auth, path, and behavior issues in seconds — not Vercel deploy cycles.
+2. **Read the API docs for every endpoint.** Do not assume behavior (pagination defaults, async vs sync, path shapes, required scopes). Flag anything unverified explicitly: *"I'm assuming X — we should test this before deploying."*
+3. **Test the full happy path locally before first deploy.** If a local script can't be written (e.g., requires Vercel env), note that as a risk.
+
+---
+
+## Debugging Protocol
+
+When something isn't working:
+
+- **First error in a multi-step flow:** stop and read all related code before fixing anything. List every assumption. Fix all issues in one pass — not one per deploy cycle.
+- **Silent failure (no error, no log, just nothing):** first question is *"is this code even running?"* — not *"what is it doing wrong?"* Add a log at the entry point before doing anything else.
+- **Add logging before first deploy** on any non-trivial code path. Step markers (`[step] doing X`) cost nothing and save hours.
+
+---
+
+## Failure Design
+
+For any multi-step flow that calls external services:
+
+- **Design for re-entrancy from the start.** Partial failures will happen. The system must be able to retry cleanly without manual DB fixes or orphaned resources.
+- **Account for accumulated state.** Repeated failures leave dirty data: multiple rows, stuck statuses, orphaned external resources. Handle this explicitly — don't assume a clean slate.
+- **Track and clean up external resources** created by failing code (repos, Codespaces, etc.). If cleanup can't be automated immediately, document manual steps.
+
+---
+
 ## Escalation
 
 Stop and ask the human before:
