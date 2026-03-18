@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { provisionRepo } from '@/lib/github/provision-repo'
 import { provisionCodespace } from '@/lib/github/provision-codespace'
@@ -74,8 +75,8 @@ export async function POST(request: NextRequest) {
     .eq('id', attemptId)
 
   // Provision repo and Codespace asynchronously
-  // We return immediately so the UI can show the loading state
-  provisionInBackground(admin, session.id, attemptId, user.id).catch(console.error)
+  // waitUntil keeps the Vercel function alive until provisioning completes
+  waitUntil(provisionInBackground(admin, session.id, attemptId, user.id).catch(console.error))
 
   return NextResponse.json({ sessionId: session.id })
 }
