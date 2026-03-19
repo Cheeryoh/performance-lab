@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Clock, AlertTriangle, ExternalLink, CheckCircle } from 'lucide-react'
+import { Clock, AlertTriangle, ExternalLink, CheckCircle, Send } from 'lucide-react'
 import { useExamTimer } from '@/hooks/useExamTimer'
 import { useVisibilityGuard } from '@/hooks/useVisibilityGuard'
 
@@ -23,13 +22,13 @@ export default function ExamClient({
   secondsLeft: initialSeconds,
   sessionStatus: initialStatus,
 }: Props) {
-  const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [countdown, setCountdown] = useState(5)
   const [codespaceUrl_, setCodespaceUrl] = useState(codespaceUrl)
   const [sessionStatus, setSessionStatus] = useState(initialStatus)
 
-  const { formatted, isUrgent, isExpired } = useExamTimer({
+  const { formatted, isUrgent } = useExamTimer({
     durationSeconds: initialSeconds,
     onExpire: () => handleSubmit(),
   })
@@ -61,6 +60,31 @@ export default function ExamClient({
     return () => clearInterval(poll)
   }, [attemptId, sessionStatus])
 
+  // Countdown and tab close after submission
+  useEffect(() => {
+    if (!submitted) return
+
+    // Notify the opener tab (candidate portal) so it can refresh its state
+    try {
+      window.opener?.postMessage({ type: 'exam-submitted', attemptId }, '*')
+    } catch {
+      // opener may be null or cross-origin restricted — ignore
+    }
+
+    const timer = setInterval(() => {
+      setCountdown((n) => {
+        if (n <= 1) {
+          clearInterval(timer)
+          window.close()
+          return 0
+        }
+        return n - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [submitted, attemptId])
+
   async function handleSubmit() {
     if (submitting || submitted) return
     setSubmitting(true)
@@ -80,31 +104,38 @@ export default function ExamClient({
       }
 
       setSubmitted(true)
-      // Redirect to portal history
-      setTimeout(() => {
-        router.push(`${process.env.NEXT_PUBLIC_CANDIDATE_PORTAL_URL ?? 'https://cert-candidate-portal.vercel.app'}/history`)
-      }, 2000)
     } catch {
       alert('Network error — please try again.')
       setSubmitting(false)
     }
   }
 
+  // ── Submitted screen ───────────────────────────────────────────────────────
   if (submitted) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <CheckCircle className="h-12 w-12 text-green-400 mx-auto" />
+        <div className="text-center space-y-4 max-w-sm px-6">
+          <div className="h-14 w-14 rounded-full bg-green-500/20 flex items-center justify-center mx-auto">
+            <CheckCircle className="h-7 w-7 text-green-400" />
+          </div>
           <h2 className="text-xl font-semibold">Exam submitted!</h2>
-          <p className="text-zinc-400 text-sm">Redirecting to your results…</p>
+          <p className="text-zinc-400 text-sm">
+            Your work has been received and is being scored.
+          </p>
+          <p className="text-zinc-500 text-sm">
+            This tab will close in{' '}
+            <span className="text-white font-semibold tabular-nums">{countdown}</span>
+            {countdown === 1 ? ' second' : ' seconds'}.
+          </p>
         </div>
       </div>
     )
   }
 
+  // ── Exam screen ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
-      {/* Top bar */}
+      {/* Top bar — timer only, no submit button */}
       <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 bg-zinc-900">
         <div>
           <span className="text-xs text-zinc-500 uppercase tracking-wider">{certCode}</span>
@@ -116,13 +147,8 @@ export default function ExamClient({
           {formatted}
         </div>
 
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="rounded-lg bg-violet-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-60"
-        >
-          {submitting ? 'Submitting…' : 'Submit Exam'}
-        </button>
+        {/* Spacer to keep timer centered */}
+        <div className="w-24" />
       </header>
 
       {/* Violation warning banner */}
@@ -160,7 +186,7 @@ export default function ExamClient({
               <ol className="text-zinc-300 text-sm leading-relaxed mt-2 space-y-1 list-decimal list-inside">
                 <li>Run <code className="bg-zinc-800 px-1 rounded">npm test</code> to verify</li>
                 <li>Run <code className="bg-zinc-800 px-1 rounded">git add -A && git commit -m &quot;fix&quot; && git push</code></li>
-                <li>Click <strong>Submit Exam</strong></li>
+                <li>Click <strong>Submit Exam</strong> below</li>
               </ol>
             </div>
           </div>
@@ -172,10 +198,9 @@ export default function ExamClient({
               <li>50 pts — Claude Code usage quality (4D rubric)</li>
             </ul>
           </div>
-
         </aside>
 
-        {/* Right panel: Codespace launch */}
+        {/* Right panel */}
         <main className="flex-1 bg-zinc-950 flex items-center justify-center">
           {sessionStatus !== 'active' ? (
             <div className="text-center space-y-3">
@@ -188,16 +213,17 @@ export default function ExamClient({
               <p className="text-zinc-600 text-xs">This usually takes 1–2 minutes.</p>
             </div>
           ) : (
-            <div className="text-center space-y-6 max-w-sm px-6">
+            <div className="text-center space-y-4 max-w-sm px-6">
               <div className="space-y-2">
                 <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center mx-auto">
                   <CheckCircle className="h-5 w-5 text-green-400" />
                 </div>
                 <h2 className="text-lg font-semibold text-white">Codespace ready</h2>
                 <p className="text-zinc-400 text-sm">
-                  Your environment is provisioned. Open it in a new tab to begin.
+                  Work in the Codespace, then come back here to submit.
                 </p>
               </div>
+
               <a
                 href={codespaceUrl_!}
                 target="_blank"
@@ -207,7 +233,20 @@ export default function ExamClient({
                 <ExternalLink className="h-4 w-4 shrink-0" />
                 Open Codespace
               </a>
-              <p className="text-zinc-600 text-xs">Opens in VS Code for the Web (new tab)</p>
+
+              <div className="border-t border-zinc-800 pt-4">
+                <p className="text-zinc-500 text-xs mb-3">
+                  Committed your fixes and pushed? Submit when ready.
+                </p>
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="flex items-center justify-center gap-2 w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-60 transition-colors"
+                >
+                  <Send className="h-4 w-4 shrink-0" />
+                  {submitting ? 'Submitting…' : 'Submit Exam'}
+                </button>
+              </div>
             </div>
           )}
         </main>
