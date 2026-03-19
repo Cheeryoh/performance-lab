@@ -122,6 +122,19 @@ For any multi-step flow that calls external services:
 
 ---
 
+## Self-Testing Before Handoff
+
+Before telling the human something works, verify it yourself using available tools:
+
+- **After code changes:** run `node.exe node_modules/next/dist/bin/next build` to catch TypeScript errors
+- **After API integration changes:** run the relevant local test script (e.g. `scripts/test-provision.js`) or write an inline Node script that exercises the changed path
+- **After DB schema or query changes:** query the live DB via `node --env-file=.env.local -e "..."` using the service role key to verify rows were written correctly
+- **After validation logic changes:** run the deterministic checks inline against a real repo before deploying
+
+The pattern: write a small Node script, run it with `node --env-file=.env.local`, read the output. This is faster than a Vercel deploy cycle and catches most issues before the human ever sees them.
+
+---
+
 ## Escalation
 
 Stop and ask the human before:
