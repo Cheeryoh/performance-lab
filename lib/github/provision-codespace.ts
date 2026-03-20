@@ -133,7 +133,7 @@ async function setCodespaceSecret(
         'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ encrypted_value: encryptedValue, key_id }),
+      body: JSON.stringify({ encrypted_value: encryptedValue, key_id, visibility: 'all' }),
     },
   )
 
