@@ -16,6 +16,16 @@ export interface CreateCodespaceResult {
   codespaceUrl: string
 }
 
+/**
+ * Pre-sets ANTHROPIC_API_KEY as a user Codespace secret before the Codespace
+ * is created, so it is available as an env var from the moment the container starts.
+ */
+export async function preInjectApiKey(): Promise<void> {
+  const token = process.env.GITHUB_PAT!
+  const apiKey = process.env.ANTHROPIC_API_KEY!
+  await setCodespaceSecret('ANTHROPIC_API_KEY', apiKey, token)
+}
+
 export async function createCodespace(
   org: string,
   repoName: string,
