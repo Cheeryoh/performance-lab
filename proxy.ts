@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_ROUTES = ['/api/validation/events', '/api/auth/callback']
+const PUBLIC_ROUTES = ['/api/validation/events', '/api/auth/callback', '/login']
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -43,7 +43,7 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith('/admin')) {
     if (!user) {
       const url = request.nextUrl.clone()
-      url.pathname = '/unauthorized'
+      url.pathname = '/login'
       return NextResponse.redirect(url)
     }
     // Role check happens inside the admin page/layout
