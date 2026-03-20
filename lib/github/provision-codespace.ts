@@ -62,19 +62,17 @@ export async function createCodespace(
 }
 
 /**
- * Checks whether the Codespace is Available, and if so injects the three
- * required secrets. Returns true if secrets were injected, false if the
- * Codespace is not yet Available (caller should retry on next poll).
+ * Checks whether the Codespace is Available.
+ * Returns true when ready, false if still provisioning (caller retries on next poll).
+ * Env vars (ANTHROPIC_API_KEY, EXAM_SESSION_ID, SUBMIT_ENDPOINT) are already
+ * baked into devcontainer.json at repo provisioning time — no secret injection needed.
  */
 export async function injectCodespaceSecrets(
   codespaceName: string,
-  sessionId: string,
+  _sessionId: string,
 ): Promise<boolean> {
   const token = process.env.GITHUB_PAT!
-  const apiKey = process.env.ANTHROPIC_API_KEY!
-  const baseUrl = process.env.EXAM_ENVIRONMENT_BASE_URL!
 
-  // Check current Codespace state
   const stateRes = await fetch(
     `https://api.github.com/user/codespaces/${codespaceName}`,
     {
@@ -89,15 +87,7 @@ export async function injectCodespaceSecrets(
   if (!stateRes.ok) return false
 
   const { state } = await stateRes.json()
-  if (state !== 'Available') return false
-
-  // Codespace is ready — inject secrets
-  // SUBMIT_ENDPOINT is just the base URL; the hook in .claude/settings.json appends the path
-  await setCodespaceSecret('ANTHROPIC_API_KEY', apiKey, token)
-  await setCodespaceSecret('EXAM_SESSION_ID', sessionId, token)
-  await setCodespaceSecret('SUBMIT_ENDPOINT', baseUrl, token)
-
-  return true
+  return state === 'Available'
 }
 
 async function setCodespaceSecret(

@@ -14,6 +14,8 @@ export interface ProvisionRepoResult {
 export async function provisionRepo(
   candidateId: string,
   attemptId: string,
+  sessionId: string,
+  submitEndpoint: string,
 ): Promise<ProvisionRepoResult> {
   const org = process.env.GITHUB_ORG!
   const template = process.env.BROKEN_REPO_TEMPLATE!
@@ -63,10 +65,10 @@ export async function provisionRepo(
   // generate is async — poll until the template branch is committed before returning
   await waitForBranch(repo.full_name, templateDefaultBranch, headers)
 
-  // Inject ANTHROPIC_API_KEY directly into devcontainer.json containerEnv.
-  // This is the only reliable way to get it into the container at startup —
-  // Codespace secrets are injected at start time only and have propagation delays.
-  await injectApiKeyIntoDevcontainer(repo.full_name, templateDefaultBranch, headers)
+  // Inject all env vars directly into devcontainer.json containerEnv.
+  // This is the only reliable way — Codespace secrets only apply at container
+  // start time and have propagation delays if set after creation.
+  await injectDevcontainerEnv(repo.full_name, templateDefaultBranch, headers, sessionId, submitEndpoint)
 
   return {
     repoName: repo.name,
@@ -76,10 +78,12 @@ export async function provisionRepo(
   }
 }
 
-async function injectApiKeyIntoDevcontainer(
+async function injectDevcontainerEnv(
   fullRepoName: string,
   branch: string,
   headers: Record<string, string>,
+  sessionId: string,
+  submitEndpoint: string,
 ): Promise<void> {
   const apiKey = process.env.ANTHROPIC_API_KEY!
   const path = '.devcontainer/devcontainer.json'
@@ -94,9 +98,14 @@ async function injectApiKeyIntoDevcontainer(
   }
   const { content, sha } = await getRes.json()
 
-  // Decode, parse, inject key, re-encode
+  // Decode, parse, inject all three env vars, re-encode
   const devcontainer = JSON.parse(Buffer.from(content, 'base64').toString('utf8'))
-  devcontainer.containerEnv = { ...(devcontainer.containerEnv ?? {}), ANTHROPIC_API_KEY: apiKey }
+  devcontainer.containerEnv = {
+    ...(devcontainer.containerEnv ?? {}),
+    ANTHROPIC_API_KEY: apiKey,
+    EXAM_SESSION_ID: sessionId,
+    SUBMIT_ENDPOINT: submitEndpoint,
+  }
   const updated = Buffer.from(JSON.stringify(devcontainer, null, 2) + '\n').toString('base64')
 
   // Commit updated file

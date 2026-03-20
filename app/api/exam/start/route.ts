@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
   try {
     console.log('[start] step 1: provisionRepo')
-    const repo = await provisionRepo(user.id, attemptId)
+    const repo = await provisionRepo(user.id, attemptId, session.id, process.env.EXAM_ENVIRONMENT_BASE_URL!)
     console.log(`[start] step 1 done: repoName=${repo.repoName} branch=${repo.defaultBranch}`)
 
     console.log('[start] step 2: createCodespace')
