@@ -104,7 +104,7 @@ async function injectDevcontainerEnv(
     ...(devcontainer.containerEnv ?? {}),
     ANTHROPIC_API_KEY: apiKey,
     EXAM_SESSION_ID: sessionId,
-    SUBMIT_ENDPOINT: submitEndpoint,
+    SUBMIT_ENDPOINT: submitEndpoint.replace(/\/$/, ''),
   }
   const updated = Buffer.from(JSON.stringify(devcontainer, null, 2) + '\n').toString('base64')
 
