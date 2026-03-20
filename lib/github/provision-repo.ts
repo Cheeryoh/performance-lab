@@ -63,11 +63,58 @@ export async function provisionRepo(
   // generate is async — poll until the template branch is committed before returning
   await waitForBranch(repo.full_name, templateDefaultBranch, headers)
 
+  // Inject ANTHROPIC_API_KEY directly into devcontainer.json containerEnv.
+  // This is the only reliable way to get it into the container at startup —
+  // Codespace secrets are injected at start time only and have propagation delays.
+  await injectApiKeyIntoDevcontainer(repo.full_name, templateDefaultBranch, headers)
+
   return {
     repoName: repo.name,
     repoUrl: repo.html_url,
     cloneUrl: repo.clone_url,
     defaultBranch: templateDefaultBranch,
+  }
+}
+
+async function injectApiKeyIntoDevcontainer(
+  fullRepoName: string,
+  branch: string,
+  headers: Record<string, string>,
+): Promise<void> {
+  const apiKey = process.env.ANTHROPIC_API_KEY!
+  const path = '.devcontainer/devcontainer.json'
+
+  // Fetch current file content + SHA (required for update)
+  const getRes = await fetch(
+    `https://api.github.com/repos/${fullRepoName}/contents/${path}?ref=${branch}`,
+    { headers },
+  )
+  if (!getRes.ok) {
+    throw new Error(`Failed to fetch devcontainer.json: ${await getRes.text()}`)
+  }
+  const { content, sha } = await getRes.json()
+
+  // Decode, parse, inject key, re-encode
+  const devcontainer = JSON.parse(Buffer.from(content, 'base64').toString('utf8'))
+  devcontainer.containerEnv = { ...(devcontainer.containerEnv ?? {}), ANTHROPIC_API_KEY: apiKey }
+  const updated = Buffer.from(JSON.stringify(devcontainer, null, 2) + '\n').toString('base64')
+
+  // Commit updated file
+  const putRes = await fetch(
+    `https://api.github.com/repos/${fullRepoName}/contents/${path}`,
+    {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message: 'chore: inject exam environment config',
+        content: updated,
+        sha,
+        branch,
+      }),
+    },
+  )
+  if (!putRes.ok) {
+    throw new Error(`Failed to update devcontainer.json: ${await putRes.text()}`)
   }
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { provisionRepo } from '@/lib/github/provision-repo'
-import { createCodespace, preInjectApiKey } from '@/lib/github/provision-codespace'
+import { createCodespace } from '@/lib/github/provision-codespace'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -93,9 +93,7 @@ export async function POST(request: NextRequest) {
     const repo = await provisionRepo(user.id, attemptId)
     console.log(`[start] step 1 done: repoName=${repo.repoName} branch=${repo.defaultBranch}`)
 
-    console.log('[start] step 2a: preInjectApiKey')
-    await preInjectApiKey()
-    console.log('[start] step 2b: createCodespace')
+    console.log('[start] step 2: createCodespace')
     const codespace = await createCodespace(org, repo.repoName, repo.defaultBranch)
     console.log(`[start] step 2 done: codespaceName=${codespace.codespaceName}`)
 
