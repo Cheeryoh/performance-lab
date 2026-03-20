@@ -1,22 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { use, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Clock, Code2 } from 'lucide-react'
 
 export default function LaunchPage({ params }: { params: Promise<{ attemptId: string }> }) {
+  const { attemptId } = use(params)
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [attemptIdResolved, setAttemptIdResolved] = useState<string | null>(null)
-
-  // Resolve params
-  if (!attemptIdResolved) {
-    params.then((p) => setAttemptIdResolved(p.attemptId))
-    return null
-  }
-
-  const attemptId = attemptIdResolved
 
   async function handleBegin() {
     setLoading(true)
