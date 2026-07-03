@@ -27,6 +27,7 @@ export async function createClient() {
 }
 
 export function createAdminClient() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate: keeps the admin client untyped; a typed import surfaces pre-existing join-typing mismatches at call sites (fix needs generated DB types)
   const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

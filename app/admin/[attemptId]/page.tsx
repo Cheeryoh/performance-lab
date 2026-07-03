@@ -1,4 +1,5 @@
 import { requireReviewer } from '@/lib/auth/reviewer-guard'
+import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import OverrideForm from './override-form'
@@ -78,9 +79,9 @@ export default async function AdminAttemptPage({
               {attempt.submitted_at && ` · ${new Date(attempt.submitted_at).toLocaleString()}`}
             </p>
           </div>
-          <a href="/admin" className="text-xs text-zinc-500 hover:text-zinc-300">
+          <Link href="/admin" className="text-xs text-zinc-500 hover:text-zinc-300">
             ← All attempts
-          </a>
+          </Link>
         </div>
 
         {/* Deterministic Results */}

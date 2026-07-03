@@ -54,7 +54,7 @@ export default function LaunchPage({ params }: { params: Promise<{ attemptId: st
           <ul className="text-sm text-zinc-300 space-y-2 pl-1">
             <li className="flex items-start gap-2">
               <Clock className="h-4 w-4 mt-0.5 text-zinc-500 shrink-0" />
-              <span>You have <strong className="text-white">10 minutes</strong> from the moment you click "Begin Exam".</span>
+              <span>You have <strong className="text-white">10 minutes</strong> from the moment you click &ldquo;Begin Exam&rdquo;.</span>
             </li>
             <li className="flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-500 shrink-0" />

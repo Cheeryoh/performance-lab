@@ -58,7 +58,9 @@ export default async function ExamPage({ params }: { params: Promise<{ attemptId
   const session = _session as ExamSession | null
 
   const timeLimitMinutes = attempt.certifications?.time_limit_minutes ?? 10
+  // eslint-disable-next-line react-hooks/purity -- server component: per-request wall clock is intentional
   const startedAt = attempt.started_at ? new Date(attempt.started_at).getTime() : Date.now()
+  // eslint-disable-next-line react-hooks/purity -- server component: per-request wall clock is intentional
   const elapsed = Math.floor((Date.now() - startedAt) / 1000)
   const secondsLeft = Math.max(0, timeLimitMinutes * 60 - elapsed)
 

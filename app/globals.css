@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+/* Theme tokens — layout.tsx uses bg-background; without these Tailwind v4
+   silently no-ops the utility and the body renders unthemed. Values match the
+   zinc palette the exam screens already use. */
+@theme {
+  --color-background: #09090b; /* zinc-950 */
+  --color-foreground: #fafafa; /* zinc-50 */
+}

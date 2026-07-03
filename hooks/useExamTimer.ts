@@ -10,7 +10,9 @@ interface ExamTimerOptions {
 export function useExamTimer({ durationSeconds, onExpire }: ExamTimerOptions) {
   const [secondsLeft, setSecondsLeft] = useState(durationSeconds)
   const onExpireRef = useRef(onExpire)
-  onExpireRef.current = onExpire
+  useEffect(() => {
+    onExpireRef.current = onExpire
+  }, [onExpire])
 
   useEffect(() => {
     const interval = setInterval(() => {
